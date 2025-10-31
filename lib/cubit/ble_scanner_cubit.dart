@@ -10,12 +10,22 @@ part 'ble_scanner_state.dart';
 // --- Pico Datalogger BLE Definitions ---
 final Guid picoServiceUuid = Guid("0000aaa0-0000-1000-8000-00805f9b34fb");
 final Guid picoTimeCharUuid = Guid("0000aaa1-0000-1000-8000-00805f9b34fb");
+final Guid picoCommandCharUuid = Guid("0000aaa2-0000-1000-8000-00805f9b34fb");
+final Guid picoDataCharUuid = Guid("0000aaa3-0000-1000-8000-00805f9b34fb");
 // -----------------------------------------
 
 class BleScannerCubit extends Cubit<BleScannerState> {
   StreamSubscription<List<ScanResult>>? _scanSubscription;
-  BluetoothCharacteristic? _timeCharacteristic;
   BluetoothDevice? _internalDeviceRef; // For calling disconnect
+
+  // --- CHARACTERISTIC REFS ---
+  BluetoothCharacteristic? _timeCharacteristic;
+  BluetoothCharacteristic? _commandCharacteristic;
+  BluetoothCharacteristic? _dataCharacteristic;
+
+  // --- DATA STREAMING ---
+  StreamSubscription<List<int>>? _dataSubscription; // For data notifications
+  final List<int> _dataBuffer = []; // Buffer for partial lines
 
   BleScannerCubit() : super(const BleScannerState()) {
     requestPermissions();
@@ -24,6 +34,7 @@ class BleScannerCubit extends Cubit<BleScannerState> {
   @override
   Future<void> close() {
     _scanSubscription?.cancel();
+    _dataSubscription?.cancel();
     _internalDeviceRef?.disconnect();
     return super.close();
   }
@@ -136,36 +147,45 @@ class BleScannerCubit extends Cubit<BleScannerState> {
 
   Future<void> connectToDevice(BluetoothDevice device) async {
     if (state.status == BleScannerStatus.connecting) return;
-
     emit(
       state.copyWith(
         status: BleScannerStatus.connecting,
         statusMessage: "Connecting to ${device.platformName}...",
       ),
     );
-
     try {
       stopScan(); // Stop scanning when we initiate a connection
       await device.connect(timeout: const Duration(seconds: 10));
-
       emit(state.copyWith(statusMessage: "Discovering services..."));
       List<BluetoothService> services = await device.discoverServices();
 
-      BluetoothCharacteristic? foundChar;
+      BluetoothCharacteristic? foundTimeChar;
+      BluetoothCharacteristic? foundCmdChar;
+      BluetoothCharacteristic? foundDataChar;
+
       for (var service in services) {
         if (service.uuid == picoServiceUuid) {
           for (var char in service.characteristics) {
             if (char.uuid == picoTimeCharUuid) {
-              foundChar = char;
-              break;
+              foundTimeChar = char;
+            } else if (char.uuid == picoCommandCharUuid) {
+              foundCmdChar = char;
+            } else if (char.uuid == picoDataCharUuid) {
+              foundDataChar = char;
             }
           }
         }
       }
 
-      if (foundChar != null) {
+      // Check for all required characteristics
+      if (foundTimeChar != null &&
+          foundCmdChar != null &&
+          foundDataChar != null) {
         _internalDeviceRef = device;
-        _timeCharacteristic = foundChar;
+        _timeCharacteristic = foundTimeChar;
+        _commandCharacteristic = foundCmdChar;
+        _dataCharacteristic = foundDataChar;
+
         emit(
           state.copyWith(
             status: BleScannerStatus.connected,
@@ -180,7 +200,7 @@ class BleScannerCubit extends Cubit<BleScannerState> {
           state.copyWith(
             status: BleScannerStatus.error,
             statusMessage:
-                "Connection failed: Could not find time characteristic.",
+                "Connection failed: Could not find all required characteristics.",
           ),
         );
       }
@@ -228,15 +248,144 @@ class BleScannerCubit extends Cubit<BleScannerState> {
     }
   }
 
+  // --- DATA HANDLING METHODS ---
+
+  /// Internal helper to process buffer and emit new lines
+  void _processBufferLines(String data, {bool isEot = false}) {
+    if (data.isEmpty && !isEot) return;
+
+    // Split by newline and filter out any empty strings
+    final lines = data.split('\n').where((l) => l.isNotEmpty).toList();
+
+    if (lines.isEmpty && !isEot) return;
+
+    emit(
+      state.copyWith(
+        logLines: List.from(state.logLines)..addAll(lines),
+        isLoading: !isEot, // Keep loading if not EOT
+        statusMessage: isEot ? "Data received!" : "Receiving data...",
+      ),
+    );
+  }
+
+  /// Callback for when a data chunk is received from the Pico
+  void _handleDataChunk(List<int> chunk) {
+    _dataBuffer.addAll(chunk);
+
+    // We use fromCharCodes as the log is plain ASCII
+    String data = String.fromCharCodes(_dataBuffer);
+
+    // Check for End-of-Transmission
+    if (data.contains(r'$$EOT$$')) {
+      String finalData = data.replaceAll(r'$$EOT$$', '');
+      _processBufferLines(finalData, isEot: true);
+
+      // Clean up
+      _dataBuffer.clear();
+      _dataSubscription?.cancel();
+      _dataSubscription = null;
+      _dataCharacteristic?.setNotifyValue(false);
+      return;
+    }
+
+    // Check for complete lines (terminated by newline)
+    int lastNewline = data.lastIndexOf('\n');
+    if (lastNewline != -1) {
+      String completeLines = data.substring(0, lastNewline);
+      String partialLine = data.substring(lastNewline + 1);
+
+      // Process the complete lines
+      _processBufferLines(completeLines, isEot: false);
+
+      // Reset buffer with the remaining partial line
+      _dataBuffer.clear();
+      _dataBuffer.addAll(partialLine.codeUnits);
+    }
+    // If no newline, just keep buffering...
+  }
+
+  /// Public method to be called from the UI
+  Future<void> requestLogFile(String filename) async {
+    if (_commandCharacteristic == null || _dataCharacteristic == null) {
+      emit(
+        state.copyWith(
+          status: BleScannerStatus.error,
+          statusMessage: "Characteristics not found.",
+        ),
+      );
+      return;
+    }
+
+    // 1. Clear old state and set loading
+    _dataBuffer.clear();
+    emit(
+      state.copyWith(
+        isLoading: true,
+        logLines: [], // Clear old lines
+        statusMessage: "Requesting file $filename...",
+      ),
+    );
+
+    try {
+      // 2. Subscribe to data characteristic
+      await _dataSubscription?.cancel(); // Cancel any old subscription
+      await _dataCharacteristic!.setNotifyValue(true);
+      _dataSubscription = _dataCharacteristic!.onValueReceived.listen(
+        _handleDataChunk,
+        onError: (e) {
+          emit(
+            state.copyWith(
+              isLoading: false,
+              status: BleScannerStatus.error,
+              statusMessage: "Data stream error: $e",
+            ),
+          );
+        },
+      );
+
+      // 3. Send command to Pico
+      final command = "GET:$filename";
+      await _commandCharacteristic!.write(
+        command.codeUnits,
+        withoutResponse: true,
+      );
+
+      emit(state.copyWith(statusMessage: "Waiting for data..."));
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isLoading: false,
+          status: BleScannerStatus.error,
+          statusMessage: "Failed to request file: $e",
+        ),
+      );
+    }
+  }
+
   Future<void> disconnect() async {
+    await _dataSubscription?.cancel();
+    _dataSubscription = null;
+    if (_dataCharacteristic != null) {
+      try {
+        await _dataCharacteristic!.setNotifyValue(false);
+      } catch (e) {
+        // Ignore errors on disconnect
+      }
+    }
+    _dataBuffer.clear();
+
     await _internalDeviceRef?.disconnect();
     _internalDeviceRef = null;
     _timeCharacteristic = null;
+    _commandCharacteristic = null;
+    _dataCharacteristic = null;
     emit(
       state.copyWith(
         status: BleScannerStatus.permissionsGranted, // Back to a neutral state
         connectedDevice: () => null, // Explicitly set device to null
         statusMessage: "Disconnected. Ready to scan again.",
+        isLoading: false, // NEW
+        logLines: [], // NEW
       ),
     );
   }

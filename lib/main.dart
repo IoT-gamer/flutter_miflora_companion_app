@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'cubit/ble_scanner_cubit.dart';
+import 'history_screen.dart';
 
 void main() {
   // Wrap the app in a BlocProvider to make the Cubit available
@@ -142,6 +143,28 @@ class BleScannerScreen extends StatelessWidget {
                 _showSnackBar(context, message, !success);
               },
             ),
+            const SizedBox(height: 12.0),
+
+            ElevatedButton.icon(
+              icon: const Icon(Icons.history_edu_outlined),
+              label: const Text('View Log History'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+              ),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    // We provide the *existing* cubit to the new screen
+                    // so it doesn't create a new one.
+                    builder: (_) => BlocProvider.value(
+                      value: context.read<BleScannerCubit>(),
+                      child: const HistoryScreen(),
+                    ),
+                  ),
+                );
+              },
+            ),
+
             const SizedBox(height: 12.0),
             OutlinedButton(
               onPressed: cubit.disconnect, // Call cubit method

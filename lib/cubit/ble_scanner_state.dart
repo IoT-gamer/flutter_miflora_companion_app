@@ -17,12 +17,16 @@ class BleScannerState extends Equatable {
   final List<ScanResult> scanResults;
   final BluetoothDevice? connectedDevice;
   final String statusMessage;
+  final bool isLoading;
+  final List<String> logLines;
 
   const BleScannerState({
     this.status = BleScannerStatus.initial,
     this.scanResults = const [],
     this.connectedDevice,
     this.statusMessage = "Requesting permissions...",
+    this.isLoading = false,
+    this.logLines = const [],
   });
 
   BleScannerState copyWith({
@@ -31,6 +35,8 @@ class BleScannerState extends Equatable {
     // Use a nullable function to allow explicitly setting device to null
     BluetoothDevice? Function()? connectedDevice,
     String? statusMessage,
+    bool? isLoading,
+    List<String>? logLines,
   }) {
     return BleScannerState(
       status: status ?? this.status,
@@ -39,6 +45,8 @@ class BleScannerState extends Equatable {
           ? connectedDevice()
           : this.connectedDevice,
       statusMessage: statusMessage ?? this.statusMessage,
+      isLoading: isLoading ?? this.isLoading,
+      logLines: logLines ?? this.logLines,
     );
   }
 
@@ -48,5 +56,7 @@ class BleScannerState extends Equatable {
     scanResults,
     connectedDevice,
     statusMessage,
+    isLoading,
+    logLines,
   ];
 }

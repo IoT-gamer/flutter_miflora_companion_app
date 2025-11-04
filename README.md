@@ -13,3 +13,4 @@ This Flutter app scans for your "MiFlora Logger" Pico W device and provides two 
 * **Download Log History:** Connect to the device and download log files (e.g., `2025-10-31.txt`) directly from its SD card over BLE.
 * **Plot Data:** Automatically parses the downloaded log data and plots Temperature and Light in a simple chart.
 * **View Raw Data:** Displays the raw, line-by-line log data received from the device.
+* **Remote Pump Control:** Send a command to trigger the datalogger's attached water pump relay for 5 seconds.

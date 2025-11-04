@@ -164,8 +164,26 @@ class BleScannerScreen extends StatelessWidget {
                 );
               },
             ),
-
             const SizedBox(height: 12.0),
+
+            ElevatedButton.icon(
+              icon: const Icon(Icons.water_drop_outlined),
+              label: const Text('Run Pump (5 Sec)'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                backgroundColor: Theme.of(context).colorScheme.tertiary,
+                foregroundColor: Theme.of(context).colorScheme.onTertiary,
+              ),
+              onPressed: () async {
+                // Call the cubit method and wait for the result
+                final (success, message) = await cubit.runPump();
+                // Show snackbar from the UI layer
+                if (!context.mounted) return;
+                _showSnackBar(context, message, !success);
+              },
+            ),
+            const SizedBox(height: 12.0),
+
             OutlinedButton(
               onPressed: cubit.disconnect, // Call cubit method
               child: const Text('Disconnect'),

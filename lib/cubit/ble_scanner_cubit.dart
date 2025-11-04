@@ -248,6 +248,35 @@ class BleScannerCubit extends Cubit<BleScannerState> {
     }
   }
 
+  /// Returns a tuple of (bool success, String message)
+  Future<(bool, String)> runPump() async {
+    if (_commandCharacteristic == null ||
+        state.status != BleScannerStatus.connected) {
+      const msg = "Pump Error: Not connected or characteristic not found.";
+      emit(state.copyWith(status: BleScannerStatus.error, statusMessage: msg));
+      return (false, msg);
+    }
+
+    try {
+      final command = "PUMP";
+      await _commandCharacteristic!.write(
+        command.codeUnits,
+        withoutResponse: true,
+      );
+
+      const successMsg = "Pump command sent!";
+      // We don't emit a new state, just return success
+      // The UI will show a temporary snackbar
+      return (true, successMsg);
+    } catch (e) {
+      final errorMsg = "Pump Error: ${e.toString()}";
+      emit(
+        state.copyWith(status: BleScannerStatus.error, statusMessage: errorMsg),
+      );
+      return (false, errorMsg);
+    }
+  }
+
   // --- DATA HANDLING METHODS ---
 
   /// Internal helper to process buffer and emit new lines

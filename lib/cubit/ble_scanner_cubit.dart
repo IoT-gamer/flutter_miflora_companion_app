@@ -26,6 +26,7 @@ class BleScannerCubit extends Cubit<BleScannerState> {
   // --- DATA STREAMING ---
   StreamSubscription<List<int>>? _dataSubscription; // For data notifications
   final List<int> _dataBuffer = []; // Buffer for partial lines
+  final List<String> _tempLogBuffer = [];
 
   BleScannerCubit() : super(const BleScannerState()) {
     requestPermissions();
@@ -283,18 +284,22 @@ class BleScannerCubit extends Cubit<BleScannerState> {
   void _processBufferLines(String data, {bool isEot = false}) {
     if (data.isEmpty && !isEot) return;
 
-    // Split by newline and filter out any empty strings
     final lines = data.split('\n').where((l) => l.isNotEmpty).toList();
 
-    if (lines.isEmpty && !isEot) return;
+    // Add to invisible buffer
+    _tempLogBuffer.addAll(lines);
 
-    emit(
-      state.copyWith(
-        logLines: List.from(state.logLines)..addAll(lines),
-        isLoading: !isEot, // Keep loading if not EOT
-        statusMessage: isEot ? "Data received!" : "Receiving data...",
-      ),
-    );
+    // Only update the UI when finished
+    if (isEot) {
+      emit(
+        state.copyWith(
+          logLines: List.from(_tempLogBuffer), // Move buffer to state
+          isLoading: false,
+          statusMessage: "Data received!",
+        ),
+      );
+      _tempLogBuffer.clear(); // Cleanup
+    }
   }
 
   /// Callback for when a data chunk is received from the Pico
@@ -347,6 +352,7 @@ class BleScannerCubit extends Cubit<BleScannerState> {
 
     // 1. Clear old state and set loading
     _dataBuffer.clear();
+    _tempLogBuffer.clear();
     emit(
       state.copyWith(
         isLoading: true,

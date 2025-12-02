@@ -120,30 +120,47 @@ class _HistoryScreenState extends State<HistoryScreen> {
   /// Builds the Chart and List view once data is loaded
   Widget _buildDataDisplay(List<String> lines) {
     // Parse the data
-    final (tempSpots, lightSpots) = _parseLogData(lines);
+    final (
+      tempSpots,
+      lightSpots,
+      moistureSpots,
+      conductivitySpots,
+      batterySpots,
+    ) = _parseLogData(
+      lines,
+    );
+
+    // Helper to keep code clean
+    Widget buildChartSection(String title, List<FlSpot> spots, Color color) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 16),
+          if (spots.isEmpty)
+            Text('No $title data found.')
+          else
+            SizedBox(
+              height: 200,
+              child: LineChart(_buildChartData(spots, color)),
+            ),
+          const SizedBox(height: 24),
+        ],
+      );
+    }
 
     return ListView(
       children: [
-        Text('Temperature (°C)', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 16),
-        if (tempSpots.isEmpty)
-          const Text('No temperature data found.')
-        else
-          SizedBox(
-            height: 200,
-            child: LineChart(_buildChartData(tempSpots, Colors.redAccent)),
-          ),
-        const SizedBox(height: 24),
-        Text('Light (lux)', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 16),
-        if (lightSpots.isEmpty)
-          const Text('No light data found.')
-        else
-          SizedBox(
-            height: 200,
-            child: LineChart(_buildChartData(lightSpots, Colors.orangeAccent)),
-          ),
-        const SizedBox(height: 24),
+        buildChartSection('Temperature (°C)', tempSpots, Colors.redAccent),
+        buildChartSection('Light (lux)', lightSpots, Colors.orangeAccent),
+        buildChartSection('Moisture (%)', moistureSpots, Colors.blueAccent),
+        buildChartSection(
+          'Conductivity (µS/cm)',
+          conductivitySpots,
+          Colors.brown,
+        ),
+        buildChartSection('Battery (%)', batterySpots, Colors.green),
+
         const Divider(),
         const SizedBox(height: 16),
         Text(
@@ -151,10 +168,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: 16),
+
         // Raw Data List
         Container(
           height: 300,
-          color: Theme.of(context).colorScheme.surfaceVariant,
+          color: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest, // updated for Material 3
           child: ListView.builder(
             itemCount: lines.length,
             itemBuilder: (context, index) {
@@ -176,38 +196,49 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   /// Helper function to parse log lines into chartable data
-  /// Returns a Record of (Temperature Spots, Light Spots)
-  (List<FlSpot>, List<FlSpot>) _parseLogData(List<String> lines) {
+  /// Returns a Record of (Temp, Light, Moisture, Conductivity, Battery)
+  (List<FlSpot>, List<FlSpot>, List<FlSpot>, List<FlSpot>, List<FlSpot>)
+  _parseLogData(List<String> lines) {
     final List<FlSpot> tempSpots = [];
     final List<FlSpot> lightSpots = [];
+    final List<FlSpot> moistureSpots = [];
+    final List<FlSpot> conductivitySpots = [];
+    final List<FlSpot> batterySpots = [];
 
     for (final line in lines) {
       try {
         // Line format:
-        // 2025-10-30T08:30:05,Temp:28.5,Light:150,Moisture:45,...
+        // 2025-10-30T08:30:05,Temp:28.5,Light:150,Moisture:45,Conductivity:350,Battery:88
         final parts = line.split(',');
-        if (parts.length < 3) continue; // Skip malformed lines
+        if (parts.length < 6) continue; // Ensure we have all parts
 
         final timestampStr = parts[0];
         final tempStr = parts[1].split(':')[1];
         final lightStr = parts[2].split(':')[1];
+        final moistureStr = parts[3].split(':')[1];
+        final conductivityStr = parts[4].split(':')[1];
+        final batteryStr = parts[5].split(':')[1];
 
         final dateTime = DateTime.parse(timestampStr);
-        final temp = double.parse(tempStr);
-        final light = double.parse(lightStr);
-
-        // X-axis: Time (as milliseconds)
         final double x = dateTime.millisecondsSinceEpoch.toDouble();
 
-        // Y-axis: Value
-        tempSpots.add(FlSpot(x, temp));
-        lightSpots.add(FlSpot(x, light));
+        // Parse values
+        tempSpots.add(FlSpot(x, double.parse(tempStr)));
+        lightSpots.add(FlSpot(x, double.parse(lightStr)));
+        moistureSpots.add(FlSpot(x, double.parse(moistureStr)));
+        conductivitySpots.add(FlSpot(x, double.parse(conductivityStr)));
+        batterySpots.add(FlSpot(x, double.parse(batteryStr)));
       } catch (e) {
-        // Ignore parsing errors for this line
         print("Error parsing log line: $e");
       }
     }
-    return (tempSpots, lightSpots);
+    return (
+      tempSpots,
+      lightSpots,
+      moistureSpots,
+      conductivitySpots,
+      batterySpots,
+    );
   }
 
   /// Helper to create the chart data for fl_chart

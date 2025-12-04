@@ -101,19 +101,7 @@ class BleScannerCubit extends Cubit<BleScannerState> {
     FlutterBluePlus.startScan(
       withServices: [picoServiceUuid],
       timeout: const Duration(seconds: 15),
-    ).whenComplete(() {
-      if (state.status == BleScannerStatus.scanning) {
-        final msg = state.scanResults.isEmpty
-            ? "Scan finished. No loggers found. Try again."
-            : "Scan finished. Found ${state.scanResults.length} logger(s).";
-        emit(
-          state.copyWith(
-            status: BleScannerStatus.scanFinished,
-            statusMessage: msg,
-          ),
-        );
-      }
-    });
+    );
   }
 
   void _onScanResults(List<ScanResult> results) {
@@ -122,6 +110,11 @@ class BleScannerCubit extends Cubit<BleScannerState> {
           (r) => r.advertisementData.serviceUuids.contains(picoServiceUuid),
         )
         .toList();
+
+    // the scan just stopped/timed out. Ignore this update to keep devices visible.
+    if (filteredResults.isEmpty && state.scanResults.isNotEmpty) {
+      return;
+    }
 
     String msg = state.statusMessage;
     if (state.status == BleScannerStatus.scanning) {

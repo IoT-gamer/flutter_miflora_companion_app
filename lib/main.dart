@@ -21,7 +21,7 @@ class PicoTimeSetterApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pico Time Setter',
+      title: 'Pico MiFlora',
       theme: ThemeData(
         primarySwatch: Colors.teal,
         useMaterial3: true,

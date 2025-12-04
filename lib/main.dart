@@ -65,7 +65,7 @@ class BleScannerScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pico Time Setter'),
+        title: const Text('Pico MiFlora'),
         actions: [
           IconButton(
             icon: Icon(isScanning ? Icons.stop_circle_outlined : Icons.search),
